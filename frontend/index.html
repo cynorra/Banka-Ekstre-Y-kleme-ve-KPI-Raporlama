@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Banka Ekstre Paneli</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background-color: #f8f9fa; }
+        .card { border: none; shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="container py-5">
+    <h2 class="text-center mb-4 text-primary">Banka Ekstre Yönetim Paneli</h2>
+
+    <!-- LOGIN EKRANI -->
+    <div id="loginSection" class="row justify-content-center">
+        <div class="col-md-4">
+            <div class="card p-4">
+                <h4 class="text-center">Giriş Yap</h4>
+                <div class="mb-3">
+                    <label>Kullanıcı Adı</label>
+                    <input type="text" id="username" class="form-control" value="admin">
+                </div>
+                <div class="mb-3">
+                    <label>Şifre</label>
+                    <input type="password" id="password" class="form-control" value="admin123">
+                </div>
+                <button onclick="login()" class="btn btn-primary w-100">Giriş</button>
+                <p id="loginError" class="text-danger mt-2 text-center"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- DASHBOARD (Giriş Yapılınca Görünür) -->
+    <div id="dashboardSection" class="hidden">
+        <div class="d-flex justify-content-between mb-3">
+            <h5>Hoşgeldin, <span id="userDisplay" class="fw-bold"></span></h5>
+            <button onclick="logout()" class="btn btn-outline-danger btn-sm">Çıkış Yap</button>
+        </div>
+
+        <!-- Dosya Yükleme -->
+        <div class="card p-4">
+            <h5>📁 Yeni Ekstre Yükle (CSV)</h5>
+            <div class="input-group">
+                <input type="file" id="csvFile" class="form-control">
+                <button onclick="uploadCsv()" class="btn btn-success">Yükle</button>
+            </div>
+        </div>
+
+        <!-- Rapor Filtreleme -->
+        <div class="card p-4">
+            <h5>📊 Rapor Görüntüle</h5>
+            <div class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label>Başlangıç Tarihi</label>
+                    <input type="date" id="startDate" class="form-control" value="2025-07-01">
+                </div>
+                <div class="col-md-4">
+                    <label>Bitiş Tarihi</label>
+                    <input type="date" id="endDate" class="form-control" value="2025-07-31">
+                </div>
+                <div class="col-md-4">
+                    <button onclick="getReport()" class="btn btn-primary w-100">Raporu Getir</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sonuçlar -->
+        <div id="resultsArea" class="hidden">
+            <!-- KPI Kartları -->
+            <div class="row text-center mb-4">
+                <div class="col-md-4">
+                    <div class="card p-3 bg-success text-white">
+                        <h3>₺ <span id="totalIncome">0</span></h3>
+                        <p>Toplam Gelir</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card p-3 bg-danger text-white">
+                        <h3>₺ <span id="totalExpense">0</span></h3>
+                        <p>Toplam Gider</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card p-3 bg-info text-white">
+                        <h3>₺ <span id="netFlow">0</span></h3>
+                        <p>Net Nakit Akışı</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Grafik ve Tablo -->
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card p-3">
+                        <h6>Harcama Dağılımı</h6>
+                        <canvas id="expenseChart"></canvas>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card p-3">
+                        <h6>En Çok Harcanan Kategoriler</h6>
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Kategori</th>
+                                    <th>Tutar (₺)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="categoryTable"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const API_URL = "http://localhost:8000/api";
+    let token = localStorage.getItem('access_token');
+    let chartInstance = null;
+
+    // Sayfa açıldığında token varsa dashboard'u göster
+    if(token) {
+        showDashboard();
+    }
+
+    async function login() {
+        const username = document.getElementById('username').value;
+        const pass = document.getElementById('password').value;
+
+        try {
+            const res = await fetch(`${API_URL}/auth/login/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: username, password: pass })
+            });
+
+            const data = await res.json();
+            
+            if(res.ok) {
+                localStorage.setItem('access_token', data.access);
+                token = data.access;
+                showDashboard();
+            } else {
+                document.getElementById('loginError').innerText = "Giriş başarısız! Bilgileri kontrol et.";
+            }
+        } catch (error) {
+            console.error(error);
+            alert("Sunucuya bağlanılamadı. CORS ayarlarını yaptın mı?");
+        }
+    }
+
+    function logout() {
+        localStorage.removeItem('access_token');
+        location.reload();
+    }
+
+    function showDashboard() {
+        document.getElementById('loginSection').classList.add('hidden');
+        document.getElementById('dashboardSection').classList.remove('hidden');
+        document.getElementById('userDisplay').innerText = "Yönetici";
+    }
+
+    async function uploadCsv() {
+        const fileInput = document.getElementById('csvFile');
+        if(fileInput.files.length === 0) return alert("Lütfen bir dosya seçin!");
+
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+
+        try {
+            const res = await fetch(`${API_URL}/transactions/upload/`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: formData
+            });
+
+            const data = await res.json();
+            if(res.ok) {
+                alert(`Başarılı! ${data.message}`);
+                fileInput.value = ''; // Temizle
+            } else {
+                alert("Hata: " + JSON.stringify(data));
+            }
+        } catch (error) {
+            alert("Yükleme sırasında hata oluştu.");
+        }
+    }
+
+    async function getReport() {
+        const start = document.getElementById('startDate').value;
+        const end = document.getElementById('endDate').value;
+
+        try {
+            const res = await fetch(`${API_URL}/transactions/reports/summary/?start_date=${start}&end_date=${end}`, {
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if(!res.ok) return alert("Rapor alınamadı. Tarihleri veya tokenı kontrol et.");
+
+            const data = await res.json();
+            renderReport(data);
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    function renderReport(data) {
+        document.getElementById('resultsArea').classList.remove('hidden');
+
+        // Kartları Güncelle
+        document.getElementById('totalIncome').innerText = data.summary.total_income;
+        document.getElementById('totalExpense').innerText = data.summary.total_expense;
+        document.getElementById('netFlow').innerText = data.summary.net_cash_flow;
+
+        // Tabloyu Güncelle
+        const tbody = document.getElementById('categoryTable');
+        tbody.innerHTML = "";
+        const labels = [];
+        const values = [];
+
+        data.top_expense_categories.forEach(item => {
+            tbody.innerHTML += `<tr><td>${item.category}</td><td>${item.amount}</td></tr>`;
+            labels.push(item.category);
+            values.push(item.amount);
+        });
+
+        // Grafiği Güncelle
+        const ctx = document.getElementById('expenseChart').getContext('2d');
+        if(chartInstance) chartInstance.destroy();
+
+        chartInstance = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: ['#ff6384', '#36a2eb', '#ffce56', '#4bc0c0']
+                }]
+            }
+        });
+    }
+</script>
+
+</body>
+</html>
